@@ -179,30 +179,42 @@
       <button class="graph-btn" onclick="showGraph('radial-dependency')">Radial Dependency Chart</button>
       <button class="graph-btn" onclick="showGraph('circle-packing')">Circle Packing Dependency</button>
       <button class="graph-btn" onclick="showGraph('treemap-dependency')">Treemap of Dependencies</button>
+      <button class="graph-btn" onclick="showGraph('root-dependency')">Root Files Graph</button>
+ 
     </div>
-
+ 
     <!-- Graph containers -->
     <div id="graphs-wrapper"></div>
-
+ 
     <!-- Radial Graph Container -->
     <div id="radial-dependency" class="graph-container">
       <div class="graph-title">Radial Dependency Chart</div>
       <svg id="radial"></svg>
     </div>
-
+ 
     <!-- Circle Packing Container -->
     <div id="circle-packing" class="graph-container">
       <div class="graph-title">Circle Packing Dependency</div>
       <svg id="circlepacking"></svg>
     </div>
+ 
+   
+    <div id="root-dependency" class="graph-container">
+      <div class="graph-title">Root Dependency Files</div>
+      <svg id="root-graph"></svg>
+    </div>
+ 
    
     <!-- Treemap Container -->
     <div id="treemap-dependency" class="graph-container">
       <div class="graph-title">Treemap of Dependencies</div>
       <svg id="treemap"></svg>
+      <div id="treemap-legend" style="margin: 20px; font-family: 'Times New Roman', Times, serif;">
+      <h3>Legend: Root File Colors</h3>
+      <ul style="list-style-type: none; padding: 0;" id="legend-list"></ul>
     </div>
   </div>
-
+ 
   <script>
     // Function to show selected section
     function showSection(sectionId) {
@@ -211,7 +223,7 @@
       });
       document.getElementById(sectionId).style.display = 'block';
     }
-
+ 
     // Function to show selected graph
     function showGraph(graphId) {
       document.querySelectorAll('.graph-container').forEach(graph => {
@@ -220,9 +232,9 @@
       document.querySelectorAll('.graph-btn').forEach(btn => {
         btn.classList.remove('active');
       });
-      
+     
       document.getElementById(graphId).classList.add('active');
-      
+     
       // Find and activate the button that corresponds to this graph
       const buttons = document.querySelectorAll('.graph-btn');
       for (let btn of buttons) {
@@ -233,7 +245,7 @@
     }
  
     const width = 800, height = 600;
-    
+   
     function toggleAllGraphs() {
       const graphSection = document.getElementById('all-graphs');
       const isHidden = graphSection.style.display === 'none';
@@ -474,10 +486,82 @@
  
     zoomTo([root.x, root.y, root.r * 2]);
   });
+  function createRootNodesGraph(data) {
+  const roots = Object.keys(data).filter(file =>
+    !Object.values(data).flat().includes(file)
+  );
+  const width = 400;
+  const height = roots.length * 80 + 40; // height based on number of nodes (80px spacing)
+ 
+  // Set SVG size dynamically based on number of nodes
+  const svg = d3.select("#root-graph")
+    .attr("viewBox", [0, 0, width, height])
+    .style("font", "14px Times")
+    .call(
+      d3.zoom()
+        .scaleExtent([0.5, 5])
+        .on("zoom", (event) => {
+          g.attr("transform", event.transform);
+        })
+    );
+ 
+  const g = svg.append("g");
+ 
+  // Create nodes data with y positions spaced vertically
+  const nodes = roots.map((root, i) => ({
+    id: root,
+    x: width / 2,
+    y: 40 + i * 80
+  }));
+ 
+  // Add circles (big circles)
+  const node = g.selectAll("circle")
+    .data(nodes)
+    .join("circle")
+    .attr("cx", d => d.x)
+    .attr("cy", d => d.y)
+    .attr("r", 30)  // bigger radius
+    .attr("fill", "#4cc9f0")
+    .attr("stroke", "#1d3557")
+    .attr("stroke-width", 2)
+    .style("cursor", "pointer")
+    .on("click", (event, d) => {
+      showSection('documentation-dependency');
+      const fileLinks = document.querySelectorAll('#doc-file-list li a');
+      fileLinks.forEach(link => {
+        if (link.textContent.trim() === d.id) {
+          link.scrollIntoView({ behavior: "smooth", block: "center" });
+          link.style.backgroundColor = "#ffe066";
+          setTimeout(() => link.style.backgroundColor = "", 2000);
+        }
+      });
+    })
+    .on("mouseover", function () {
+      d3.select(this).attr("fill", "#3a86ff");
+    })
+    .on("mouseout", function () {
+      d3.select(this).attr("fill", "#4cc9f0");
+    });
+ 
+  // Add labels centered horizontally, vertically aligned to circles
+  const label = g.selectAll("text")
+    .data(nodes)
+    .join("text")
+    .attr("x", d => d.x)
+    .attr("y", d => d.y + 5) // adjust vertical alignment
+    .attr("text-anchor", "middle")
+    .attr("font-weight", "bold")
+    .attr("fill", "#1d3557")
+    .style("user-select", "none")
+    .text(d => d.id);
+}
+ 
+ 
   fetch('dependency.json')
   .then(res => res.json())
   .then(data => {
-    const width = 400, height = 300; // reduced size
+   
+    const width = 400, height = 300;
  
     const root = d3.hierarchy(buildTree(data))
       .sum(() => 1)
@@ -511,7 +595,7 @@
         d3.select(this).attr("fill", color(d.parent.data.name));
       });
  
-    node.append("title")  // Tooltip on hover
+    node.append("title")
       .text(d => `${d.data.name}\n${d.value}`);
  
     node.append("text")
@@ -521,7 +605,42 @@
       .attr("fill", "white")
       .style("font-size", "10px")
       .style("pointer-events", "none");
+ 
+    // === Generate Legend for Root Files ===
+    const legendContainer = document.getElementById('legend-list');
+    const seen = new Set();
+ 
+    root.leaves().forEach(d => {
+      const rootName = d.parent.data.name;
+      if (!seen.has(rootName)) {
+        seen.add(rootName);
+ 
+        const li = document.createElement('li');
+        li.style.display = 'flex';
+        li.style.alignItems = 'center';
+        li.style.marginBottom = '6px';
+ 
+        const colorBox = document.createElement('span');
+        colorBox.style.display = 'inline-block';
+        colorBox.style.width = '16px';
+        colorBox.style.height = '16px';
+        colorBox.style.marginRight = '10px';
+        colorBox.style.backgroundColor = color(rootName);
+        colorBox.style.border = '1px solid #333';
+        colorBox.style.borderRadius = '4px';
+ 
+        const label = document.createElement('span');
+        label.textContent = rootName;
+ 
+        li.appendChild(colorBox);
+        li.appendChild(label);
+        legendContainer.appendChild(li);
+      }
+    });
+    createRootNodesGraph(data);
+ 
   });
+ 
     // ============== Helper to build hierarchy ==============
             function buildTree(flat) {
                 const map = {}, root = { name: "root", children: [] };
@@ -576,7 +695,7 @@
    
     // Show design pattern section by default
     showSection('design-pattern');
-    
+   
     // Add event listener to ensure graphs are properly initialized when dependency graphs section is shown
     document.querySelector('button[onclick="showSection(\'dependency-graphs\')"]').addEventListener('click', function() {
       // Show the first graph by default when switching to the dependency graphs section
